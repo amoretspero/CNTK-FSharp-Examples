@@ -29,8 +29,11 @@ type MNISTClassifier =
 
         let client = new WebClient()
         
-        printfn "Now downloading training image dataset..."
-        client.DownloadFile(trainImagesUrl, Path.Combine(downloadPath, trainImagesFileName))
+        printfn "Now downloading and reading training image dataset..."
+        if Path.Combine(downloadPath, trainImagesFileName) |> File.Exists then
+            printfn "Training image dataset already exists. Skipping downloading..."
+        else        
+            client.DownloadFile(trainImagesUrl, Path.Combine(downloadPath, trainImagesFileName))
         let trainImagesBuffer = Helper.DecompressGZip (File.ReadAllBytes(Path.Combine(downloadPath, trainImagesFileName)))
         let trainImagesMagicNumber = BitConverter.ToInt32(trainImagesBuffer.[0..3].Reverse().ToArray(), 0)
         printfn "Magic number: %d" trainImagesMagicNumber
@@ -40,14 +43,18 @@ type MNISTClassifier =
         printfn "Row count: %d" rowCount
         let columnCount = BitConverter.ToInt32(trainImagesBuffer.[12..15].Reverse().ToArray(), 0)
         printfn "Column count: %d" columnCount
+        printfn "%d" trainImagesBuffer.Length
         let trainImages = [|
             for i in 0..(trainImagesImagesCount - 1) ->
                 trainImagesBuffer.[(16 + i * rowCount * columnCount)..(16 + (i + 1) * rowCount * columnCount - 1)].Reverse().ToArray()
         |]
-        printfn "Finished downloading training image dataset."
+        printfn "Finished downloading and reading training image dataset."
 
-        printfn "Now downloading training label dataset..."
-        client.DownloadFile(trainLabelsUrl, Path.Combine(downloadPath, trainLabelsFileName))
+        printfn "Now downloading and reading training label dataset..."
+        if Path.Combine(downloadPath, trainLabelsFileName) |> File.Exists then
+            printfn "Training label dataset already exists. Skipping downloading..."
+        else
+            client.DownloadFile(trainLabelsUrl, Path.Combine(downloadPath, trainLabelsFileName))
         let trainLabelsBuffer = Helper.DecompressGZip (File.ReadAllBytes(Path.Combine(downloadPath, trainLabelsFileName)))
         let trainLabelsMagicNumber = BitConverter.ToInt32(trainLabelsBuffer.[0..3].Reverse().ToArray(), 0)
         printfn "Magic number: %d" trainLabelsMagicNumber
@@ -57,10 +64,13 @@ type MNISTClassifier =
             for i in 0..(trainLabelsCount - 1) ->
                 BitConverter.ToInt32([| trainLabelsBuffer.[(8 + i)]; 0uy; 0uy; 0uy |], 0)
         |]
-        printfn "Finished downloading training label dataset."
+        printfn "Finished downloading and reading training label dataset."
 
-        printfn "Now downloading test image dataset..."
-        client.DownloadFile(testImagesUrl, Path.Combine(downloadPath, testImagesFileName))
+        printfn "Now downloading and reading test image dataset..."
+        if Path.Combine(downloadPath, testImagesFileName) |> File.Exists then
+            printfn "Test image dataset already exists. Skipping downloading..."
+        else
+            client.DownloadFile(testImagesUrl, Path.Combine(downloadPath, testImagesFileName))
         let testImagesBuffer = Helper.DecompressGZip (File.ReadAllBytes(Path.Combine(downloadPath, testImagesFileName)))
         let testImagesMagicNumber = BitConverter.ToInt32(testImagesBuffer.[0..3].Reverse().ToArray(), 0)
         printfn "Magic number: %d" testImagesMagicNumber
@@ -74,10 +84,13 @@ type MNISTClassifier =
             for i in 0..(testImagesImagesCount - 1) ->
                 testImagesBuffer.[(16 + i * rowCount * columnCount)..(16 + (i + 1) * rowCount * columnCount - 1)].Reverse().ToArray()
         |]
-        printfn "Finished downloading test image dataset."
+        printfn "Finished downloading and reading test image dataset."
 
-        printfn "Now downloading test label dataset..."
-        client.DownloadFile(testLabelsUrl, Path.Combine(downloadPath, testLabelsFileName))
+        printfn "Now downloading and reading test label dataset..."
+        if Path.Combine(downloadPath, testLabelsFileName) |> File.Exists then
+            printfn "Test label dataset already exists. Skipping downloading..."
+        else
+            client.DownloadFile(testLabelsUrl, Path.Combine(downloadPath, testLabelsFileName))
         let testLabelsBuffer = Helper.DecompressGZip (File.ReadAllBytes(Path.Combine(downloadPath, testLabelsFileName)))
         let testLabelsMagicNumber = BitConverter.ToInt32(testLabelsBuffer.[0..3].Reverse().ToArray(), 0)
         printfn "Magic number: %d" testLabelsMagicNumber
@@ -87,7 +100,7 @@ type MNISTClassifier =
             for i in 0..(testLabelsCount - 1) ->
                 BitConverter.ToInt32([| testLabelsBuffer.[(8 + i)]; 0uy; 0uy; 0uy |], 0)
         |]
-        printfn "Finished test label dataset."
+        printfn "Finished downloading and reading test label dataset."
 
         let makeOneHotArray (n: int) =
             Array.reduce (fun prv cur -> prv + " " + cur) [| for i in 0..(MNISTClassifier.numOutputClasses - 1) -> if i = n then "1" else "0" |]
@@ -147,6 +160,23 @@ type MNISTClassifier =
 
         (trainMinibatchSource, testMinibatchSource)
 
+    
+    
+    /// **Description**  
+    /// Creates an MLP(Multi-Layer Perceptron) classifier.
+    ///
+    /// **Parameters**
+    ///   * `device` - parameter of type `DeviceDescriptor`
+    ///   * `numOutputClasses` - parameter of type `int`
+    ///   * `hiddenLayerDim` - parameter of type `int`
+    ///   * `scaledInput` - parameter of type `Function`
+    ///   * `classifierName` - parameter of type `string`
+    ///
+    /// **Output Type**
+    ///   * `Function`
+    ///
+    /// **Exceptions**
+    ///
     static member CreateMLPClassifier (device: DeviceDescriptor) (numOutputClasses: int) (hiddenLayerDim: int) (scaledInput: Function) (classifierName: string) =
         let dense1 = TestHelper.Dense scaledInput hiddenLayerDim device Activation.Sigmoid ""
         TestHelper.Dense dense1 numOutputClasses device Activation.None classifierName   
