@@ -45,12 +45,12 @@ type TestHelper() =
         //
         // For example - MLP,
         // Input: 784 (Think MNIST)
-        // Filter: 1 (Since MLP just times weight and pluses bias.)
+        // Filter: 1 (Since MLP just sums `weight * input` and pluses bias, filter can be thought as 1D vector of weights for neuron_{i+1}.)
         // Output: 200 (Think single hidden layer with 200 percentrons.)
         // In this case, filterRank will be `1`, outputRank will be `1`.
         // And for Glorot-Uniform-Initialization,
-        // fan-in will be `1 * 200 = numberOfFilterElements * numberOfInputElements = 200`
-        // fan-out will be `1 * 784 * 200 * 1 / 200 = numberOfElements * numberOfFilterElements / fan-in = 784`.
+        // fan-in will be `1 * 784 = numberOfFilterElements * numberOfInputElements = 784`
+        // fan-out will be `1 * 784 * 200 * 1 / 784 = numberOfElements * numberOfFilterElements / fan-in = 200`.
         // 
         // For example - convolution,
         // Input: 28 * 28 * 3 (Think MNIST as color)
