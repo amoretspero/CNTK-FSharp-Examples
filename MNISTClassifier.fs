@@ -9,8 +9,24 @@ open CNTK
 open System.Text
 
 type MNISTClassifier =
+    
+    /// **Description**  
+    /// Number of output classes.  
+    /// 
     static member numOutputClasses = 10
 
+    
+    /// **Description**  
+    /// Loads images from MNIST database, then generates minibatch source for training and testing.
+    ///
+    /// **Parameters**  
+    /// (None)
+    ///
+    /// **Output Type**
+    ///   * `MinibatchSource * MinibatchSource` - First of tuple is minibatch source for training, second is for testing.
+    ///
+    /// **Exceptions**
+    ///
     static member ImageLoader() =
         let downloadPath = Directory.GetCurrentDirectory()
         let dataPath = Directory.GetCurrentDirectory()
@@ -143,17 +159,22 @@ type MNISTClassifier =
         File.WriteAllLines(Path.Combine(dataPath, testDataFileName), testData)
         printfn "Finished generating test data as CNTK Text Format."
 
+        // For MNIST dataset, we have features stream and labels stream.
         let streamConfigurations = new StreamConfigurationVector([| 
                 new StreamConfiguration("features", rowCount * columnCount);
                 new StreamConfiguration("labels", MNISTClassifier.numOutputClasses)
             |])    
+
+        // Generates CTF(CNTK-Text-Format) deserializer for training and testing data.
         let trainCTFDeserializer = CNTKLib.CTFDeserializer(Path.Combine(dataPath, trainDataFileName), streamConfigurations)
         let testCTFDeserializer = CNTKLib.CTFDeserializer(Path.Combine(dataPath, testDataFileName), streamConfigurations)
 
+        // Generates minibatch source configuration for training and testing data.
         let trainMinibatchSourceConfig = new MinibatchSourceConfig([| trainCTFDeserializer |])
-        let trainMinibatchSource = CNTKLib.CreateCompositeMinibatchSource(trainMinibatchSourceConfig)
-
         let testMinibatchSourceConfig = new MinibatchSourceConfig([| testCTFDeserializer |])
+
+        // Generates minibatch source for training and testing.
+        let trainMinibatchSource = CNTKLib.CreateCompositeMinibatchSource(trainMinibatchSourceConfig)
         let testMinibatchSource = CNTKLib.CreateCompositeMinibatchSource(testMinibatchSourceConfig)
 
         printfn "Finished generating data."
@@ -163,17 +184,20 @@ type MNISTClassifier =
     
     
     /// **Description**  
-    /// Creates an MLP(Multi-Layer Perceptron) classifier.
+    /// Creates an MLP(Multi-Layer Perceptron) classifier.  
+    /// Here, we use 1-hidden layer MLP.
+    /// First layer(input to 1st hidden layer) is fully connected and uses sigmoid activation function.
+    /// Second layer(1st hidden layer to output layer) is also fully connected and uses no activation function.
     ///
     /// **Parameters**
-    ///   * `device` - parameter of type `DeviceDescriptor`
-    ///   * `numOutputClasses` - parameter of type `int`
-    ///   * `hiddenLayerDim` - parameter of type `int`
-    ///   * `scaledInput` - parameter of type `Function`
-    ///   * `classifierName` - parameter of type `string`
+    ///   * `device` - parameter of type `DeviceDescriptor`. Device to create this MLP classifier.
+    ///   * `numOutputClasses` - parameter of type `int`. Number of output classes.
+    ///   * `hiddenLayerDim` - parameter of type `int`. Dimension of 1st hidden layer(the only hidden layer in this MLP classifier).
+    ///   * `scaledInput` - parameter of type `Function`. Input scaled to fit in range of `[0, 1]`.
+    ///   * `classifierName` - parameter of type `string`. Name of this classifier.
     ///
     /// **Output Type**
-    ///   * `Function`
+    ///   * `Function` - MLP classifier can be viewed as composite function of fundamental building blocks CNTK provides that we used.
     ///
     /// **Exceptions**
     ///
@@ -181,6 +205,28 @@ type MNISTClassifier =
         let dense1 = TestHelper.Dense scaledInput hiddenLayerDim device Activation.Sigmoid ""
         TestHelper.Dense dense1 numOutputClasses device Activation.None classifierName   
         
+    
+    /// **Description**  
+    /// Generates a layer consisting of single convolution layer with ReLU activation functionand single max-pooling layer.
+    /// We use Glorot-Uniform-Initializer with scale of 0.26 and max-pooling layer will auto-pad input for pooling window.
+    ///
+    /// **Parameters**
+    ///   * `features` - parameter of type `Variable`. Input to this convolution with max-pooling layer. (Input data to a layer is called `features` in NN.)
+    ///   * `device` - parameter of type `DeviceDescriptor`. Device to create this layer on.
+    ///   * `kernelWidth` - parameter of type `int`. Width of kernel for convolution.
+    ///   * `kernelHeight` - parameter of type `int`. Height of kernel for convolution.
+    ///   * `numInputChannels` - parameter of type `int`. Number of channels for input, i.e. `features`.
+    ///   * `outFeatureMapCount` - parameter of type `int`. Number of output feature maps. (`feature map` means activated output of a filter in NN. This `feature maps` act as `features` for next layer, if exists.)
+    ///   * `hStride` - parameter of type `int`. Horizontal stride for convolution kernel.
+    ///   * `vStride` - parameter of type `int`. Vertical stride for convolution kernal.
+    ///   * `poolingWindowWidth` - parameter of type `int`. Width of max-pooling window.
+    ///   * `poolingWindowHeight` - parameter of type `int`. Height of max-pooling window.
+    ///
+    /// **Output Type**
+    ///   * `Function`. Output will be a function that computes convolution and max-pooling to input.
+    ///
+    /// **Exceptions**
+    ///
     static member ConvolutionWithMaxPooling
         (features: Variable)
         (device: DeviceDescriptor)
@@ -198,6 +244,27 @@ type MNISTClassifier =
             let pooling = CNTKLib.Pooling(new Variable(convFunction), PoolingType.Max, NDShape.CreateNDShape([| poolingWindowWidth; poolingWindowHeight |]), NDShape.CreateNDShape([| hStride; vStride |]), new BoolVector([| true |]))
             pooling
     
+    
+    /// **Description**  
+    /// Creates convolutional neural network.  
+    /// This network will be consisted with 2x convolution layer with max-pooling.  
+    /// Kernel will have size of (3, 3).  
+    /// Input will be 1-channel 2D image, output of first convolution layer will have 4-channel data(Number of feature maps is 4.).  
+    /// Output of second convolution layer will have 8-channel data(Number of feature maps is 8.).  
+    /// For both convolution layer, max-pooling window size will be (3, 3), stride of kernel be (2, 2).  
+    /// After 2x convolution layer, we will use a single dense layer with no activation function.  
+    ///
+    /// **Parameters**
+    ///   * `features` - parameter of type `Variable`. Input to this convolutional neural network.
+    ///   * `outDims` - parameter of type `int`. Number of output dimension. This corresponds to number of output classes.
+    ///   * `device` - parameter of type `DeviceDescriptor`. Device to create this convolutional neural network.
+    ///   * `classifierName` - parameter of type `string`. Name of this network.
+    ///
+    /// **Output Type**
+    ///   * `Function` - Output will be a function that computes two convolutions with max-pooling and a single dense layer on input.
+    ///
+    /// **Exceptions**
+    ///
     static member CreateConvolutionNeuralNetwork (features: Variable) (outDims: int) (device: DeviceDescriptor) (classifierName: string) =
         let kernelWidth1, kernelHeight1, numInputChannels1, outFeatureMapCount1 = (3, 3, 1, 4)
         let hStride1, vStride1 = (2, 2)
@@ -233,7 +300,21 @@ type MNISTClassifier =
         let denseLayer = TestHelper.Dense pooling2 outDims device Activation.None classifierName
         denseLayer
 
-    static member TrainAndEvaulate (device: DeviceDescriptor) (useConvolution: bool) (forceRetrain: bool) =
+    
+    /// **Description**  
+    /// Trains a model and evaluates that.
+    ///
+    /// **Parameters**
+    ///   * `device` - parameter of type `DeviceDescriptor`. Device to create, train and evaluate a model.
+    ///   * `useConvolution` - parameter of type `bool`. If `true`, Convolutional neural network will be used, otherwise, MLP will be used.
+    ///   * `forceRetrain` - parameter of type `bool`. If `true`, forcefully re-train model.
+    ///
+    /// **Output Type**
+    ///   * `unit`
+    ///
+    /// **Exceptions**
+    ///
+    static member TrainAndEvaluate (device: DeviceDescriptor) (useConvolution: bool) (forceRetrain: bool) =
         let featureStreamName = "features"
         let labelStreamName = "labels"
         let classifierName = "classifierOutput"
